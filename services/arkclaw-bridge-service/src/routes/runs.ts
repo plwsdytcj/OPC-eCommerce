@@ -3,8 +3,8 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@opc/db";
-import { dispatchToArkclaw } from "../arkclaw/dispatch.js";
-import { writeAudit } from "../audit.js";
+import { dispatchToArkclaw } from "../arkclaw/dispatch";
+import { writeAudit } from "../audit";
 
 export const runsRouter = new Hono();
 

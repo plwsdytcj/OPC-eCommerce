@@ -1,13 +1,17 @@
 import { eq } from "drizzle-orm";
 import { db, schema } from "@opc/db";
-import { writeAudit } from "../audit.js";
+import { writeAudit } from "../audit";
 
 type TaskRun = typeof schema.taskRuns.$inferSelect;
 
 const ARKCLAW_API_BASE = process.env.ARKCLAW_API_BASE ?? "";
 const ARKCLAW_API_KEY = process.env.ARKCLAW_API_KEY ?? "";
 const ARKCLAW_CALLBACK_BASE = process.env.ARKCLAW_CALLBACK_BASE ?? "http://localhost:4001";
-const USE_MOCK = !ARKCLAW_API_BASE || !ARKCLAW_API_KEY;
+const PLACEHOLDER_VALUES = new Set(["", "replace-me", "MOCK", "mock"]);
+const USE_MOCK =
+  PLACEHOLDER_VALUES.has(ARKCLAW_API_KEY) ||
+  PLACEHOLDER_VALUES.has(ARKCLAW_API_BASE) ||
+  ARKCLAW_API_BASE.includes("example.com");
 
 /**
  * 把 task_run 派发到 ArkClaw。

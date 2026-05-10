@@ -1,8 +1,9 @@
 import { Hono } from "hono";
 import { logger } from "hono/logger";
 import { cors } from "hono/cors";
-import { runsRouter } from "./routes/runs.js";
-import { callbacksRouter } from "./routes/callbacks.js";
+import { runsRouter } from "./routes/runs";
+import { callbacksRouter } from "./routes/callbacks";
+import { internalRouter } from "./routes/internal";
 
 export const app = new Hono();
 
@@ -15,6 +16,7 @@ app.get("/health", (c) =>
 
 app.route("/v1/runs", runsRouter);
 app.route("/v1/callbacks", callbacksRouter);
+app.route("/internal", internalRouter);
 
 app.notFound((c) => c.json({ error: "not_found", path: c.req.path }, 404));
 app.onError((err, c) => {

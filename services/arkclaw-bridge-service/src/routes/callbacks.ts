@@ -3,7 +3,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@opc/db";
-import { writeAudit } from "../audit.js";
+import { writeAudit } from "../audit";
 
 export const callbacksRouter = new Hono();
 

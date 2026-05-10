@@ -62,29 +62,31 @@ pnpm --filter @opc/arkclaw-bridge-service dev
 
 ### 2.4 验证黄金路径（mock 模式）
 
-未配置 `ARKCLAW_API_KEY` 时，bridge 会用 mock 派发器，1.5s 后回调一个假成功。
+`ARKCLAW_API_KEY` 留默认值 `replace-me` 或包含 `example.com` 时，bridge 自动走 mock：1.5s 后回调一次假成功。
 
 ```bash
-# 1) 拿到种子 workspace_id
-WS=$(psql "$DATABASE_URL" -tAc "select id from workspaces limit 1")
+# 1) 拿到种子 workspace_id（用 docker exec，不需要本地装 psql）
+WS=$(docker exec opc-postgres psql -U opc -d opc -tAXq -c \
+  "select id from workspaces limit 1" | head -1)
 
 # 2) 创建一个 task
-TASK=$(psql "$DATABASE_URL" -tAc "insert into tasks (workspace_id, title, type, created_by)
-  values ('$WS', 'Listing 优化', 'listing', '00000000-0000-0000-0000-000000000001')
-  returning id")
+TASK=$(docker exec opc-postgres psql -U opc -d opc -tAXq -c \
+  "insert into tasks (workspace_id, title, type, created_by)
+   values ('$WS', 'Listing 优化', 'listing', '00000000-0000-0000-0000-000000000001')
+   returning id" | head -1)
 
 # 3) 触发执行
+PAYLOAD=$(jq -nc --arg ws "$WS" --arg task "$TASK" \
+  '{workspace_id:$ws, task_id:$task, input:{product:"pet water fountain"}}')
 RUN=$(curl -s -X POST http://localhost:4001/v1/runs \
-  -H "content-type: application/json" \
-  -d "{\"workspace_id\":\"$WS\",\"task_id\":\"$TASK\",\"input\":{\"product\":\"pet water fountain\"}}" \
-  | jq -r .run_id)
+  -H "content-type: application/json" --data-raw "$PAYLOAD" | jq -r .run_id)
 
-# 4) 1-2 秒后查状态
+# 4) 等 mock 回调完成
 sleep 2
 curl -s http://localhost:4001/v1/runs/$RUN | jq
 ```
 
-预期：`status: "succeeded"`，`output.mock: true`，`audit_logs` 表里有 `run.create` / `run.dispatch` / `run.callback` 三条。
+预期：`status: "succeeded"`，`output.mock: true`，`audit_logs` 里有 `run.create` / `run.dispatch` / `run.callback` 三条。
 
 ---
 

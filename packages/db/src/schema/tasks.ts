@@ -1,6 +1,6 @@
 import { pgTable, uuid, text, timestamp, jsonb, index } from "drizzle-orm/pg-core";
-import { workspaces } from "./workspaces.js";
-import { agentInstances } from "./agent-instances.js";
+import { workspaces } from "./workspaces";
+import { agentInstances } from "./agent-instances";
 
 /**
  * Task = 用户创建的经营任务（业务对象）。

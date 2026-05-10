@@ -1,6 +1,6 @@
 import { pgTable, uuid, text, timestamp, jsonb, index } from "drizzle-orm/pg-core";
-import { workspaces } from "./workspaces.js";
-import { agentTemplates } from "./agent-templates.js";
+import { workspaces } from "./workspaces";
+import { agentTemplates } from "./agent-templates";
 
 /**
  * Agent Instance = 用户雇佣后的员工实例（属于某个 workspace）。

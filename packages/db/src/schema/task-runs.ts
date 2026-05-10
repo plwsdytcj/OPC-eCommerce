@@ -1,7 +1,7 @@
 import { pgTable, uuid, text, timestamp, jsonb, integer, index } from "drizzle-orm/pg-core";
-import { tasks } from "./tasks.js";
-import { agentInstances } from "./agent-instances.js";
-import { workspaces } from "./workspaces.js";
+import { tasks } from "./tasks";
+import { agentInstances } from "./agent-instances";
+import { workspaces } from "./workspaces";
 
 /**
  * Task Run = 一次具体的执行记录（对应一次 ArkClaw 调用）。
