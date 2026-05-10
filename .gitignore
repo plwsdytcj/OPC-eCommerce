@@ -1,0 +1,32 @@
+node_modules
+.pnpm-store
+dist
+.turbo
+.next
+out
+build
+
+# env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# logs
+*.log
+logs
+
+# editor
+.vscode
+.idea
+.DS_Store
+
+# evaluation clones (keep out of repo)
+_eval/
+
+# postgres / minio data
+docker/.data/
+
+# coverage
+coverage
+.nyc_output
