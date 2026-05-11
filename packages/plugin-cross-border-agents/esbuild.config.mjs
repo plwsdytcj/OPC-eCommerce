@@ -4,6 +4,11 @@ import { createPluginBundlerPresets } from "@paperclipai/plugin-sdk/bundlers";
 const presets = createPluginBundlerPresets({ uiEntry: "src/ui/index.tsx" });
 const watch = process.argv.includes("--watch");
 
+// SKILL.md 在 agent-roster.ts 里 inline 进 instructions
+const mdLoader = { ".md": "text" };
+presets.esbuild.worker.loader = { ...(presets.esbuild.worker.loader ?? {}), ...mdLoader };
+presets.esbuild.manifest.loader = { ...(presets.esbuild.manifest.loader ?? {}), ...mdLoader };
+
 const workerCtx = await esbuild.context(presets.esbuild.worker);
 const manifestCtx = await esbuild.context(presets.esbuild.manifest);
 const uiCtx = await esbuild.context(presets.esbuild.ui);

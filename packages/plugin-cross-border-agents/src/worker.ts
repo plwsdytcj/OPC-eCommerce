@@ -55,6 +55,32 @@ const plugin = definePlugin({
       };
     });
 
+    // Force-refresh: reset() + reconcile() = paperclip 会用最新 manifest
+    // 重写 agent declaration (instructions / adapter / capabilities …)。
+    // 用于 plugin upgrade 后需要把新 SKILL.md inline 推到磁盘 AGENTS.md 时调用。
+    ctx.actions.register("force-refresh", async (params) => {
+      const companyId =
+        typeof params?.companyId === "string" ? params.companyId : null;
+      const targets = companyId
+        ? [{ id: companyId, name: companyId }]
+        : await ctx.companies.list();
+      let refreshed = 0;
+      for (const c of targets) {
+        for (const key of AGENT_KEYS) {
+          try {
+            await ctx.agents.managed.reset(key, c.id);
+            await ctx.agents.managed.reconcile(key, c.id);
+            refreshed += 1;
+          } catch (err) {
+            ctx.logger.error(`force-refresh failed: ${key} → ${c.id}`, {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+      }
+      return { refreshed, companies: targets.length };
+    });
+
     ctx.data.register("status", async () => ({
       managedAgents: AGENT_KEYS,
       bindings: AGENT_SKILLS,
@@ -125,30 +151,43 @@ const plugin = definePlugin({
         );
       }
 
-      const session = await launchCtx.agents.sessions.create(agentId, companyId, {
-        reason: `marketplace launch: ${agentKey}`,
+      // paperclip 的 heartbeat SOP 要求 agent "no issue → exit"。
+      // 所以 marketplace 触发必须建一个 issue + wakeup，agent 才会真正干活。
+      // chat session 路径（sessions.sendMessage）会被 heartbeat 忽略。
+      const firstLine = intent.split("\n")[0]?.slice(0, 80) ?? `Marketplace task for ${agentKey}`;
+      const issue = await launchCtx.issues.create({
+        companyId,
+        title: firstLine || `Marketplace task: ${agentKey}`,
+        description: intent,
+        status: "todo",
+        priority: "high",
+        assigneeAgentId: agentId,
+        originKind: "plugin:opc.cross-border-agents:marketplace",
+        originId: `marketplace:${agentKey}`,
+        actor: { actorType: "plugin", actorId: "opc.cross-border-agents" },
       });
 
-      await launchCtx.agents.sessions.sendMessage(session.sessionId, companyId, {
-        prompt: intent,
-        reason: "marketplace launch",
+      await launchCtx.issues.requestWakeup(issue.id, companyId, {
+        reason: `marketplace launch: ${agentKey}`,
+        contextSource: "plugin:opc.cross-border-agents",
+        actorType: "plugin",
+        actorId: "opc.cross-border-agents",
       });
 
       const redirectUrl =
-        `${WORKBENCH_BASE}/${prefix}/agents/${agentId}` +
-        `?session=${session.sessionId}&via=marketplace`;
+        `${WORKBENCH_BASE}/${prefix}/issues/${issue.id}?via=marketplace`;
 
       launchCtx.logger.info(`marketplace launch ok`, {
         agentKey,
         agentId,
         companyId,
-        sessionId: session.sessionId,
+        issueId: issue.id,
       });
 
       return {
         status: 302,
         headers: { Location: redirectUrl },
-        body: { redirectUrl, agentId, sessionId: session.sessionId, companyId },
+        body: { redirectUrl, agentId, issueId: issue.id, companyId },
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

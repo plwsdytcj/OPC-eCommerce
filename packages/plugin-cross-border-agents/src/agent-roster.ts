@@ -1,10 +1,33 @@
 import type { PluginManagedAgentDeclaration } from "@paperclipai/plugin-sdk";
 
+// SKILL.md 通过 esbuild text loader 在构建时内嵌为字符串
+// 这样每个 agent 的 instructions 直接带上自己的核心 SOP，不依赖 codex/claude
+// 在 cwd 里 cat 文件（plugin 装的 skill 只在 paperclip 数据库里，没落盘）
+// @ts-ignore
+import listingMd from "../../db/seeds/skills/listing/amazon-listing-optimization.md";
+// @ts-ignore
+import sourcingMd from "../../db/seeds/skills/sourcing/amazon-niche-finder.md";
+// @ts-ignore
+import keywordMd from "../../db/seeds/skills/keyword/amazon-keyword-research.md";
+// @ts-ignore
+import financeMd from "../../db/seeds/skills/finance/ecom-cfo.md";
+// @ts-ignore
+import expansionMd from "../../db/seeds/skills/expansion/cross-border-ecommerce.md";
+
+const SKILL_TEXT: Record<string, string> = {
+  "amazon-listing-optimization": listingMd as unknown as string,
+  "amazon-niche-finder": sourcingMd as unknown as string,
+  "amazon-keyword-research": keywordMd as unknown as string,
+  "ecom-cfo": financeMd as unknown as string,
+  "cross-border-ecommerce": expansionMd as unknown as string,
+};
+
 /**
  * OPC 跨境 AI 员工花名册
  *
- * 每个 agent 通过 instructions.content 拿到角色定义，并提示它使用
- * 对应的 SKILL.md（已由 @opc/plugin-cross-border-skills 装入 company）。
+ * 每个 agent 的 instructions 由 buildInstructions 组装：
+ *   - 角色定义 + 工作守则 + 输出格式
+ *   - 把 spec.skillSlug 对应的 SKILL.md 全文 inline 进 prompt
  *
  * agentKey 与 marketplace store 的 agent.id 一一对应，
  * marketplace [Run Now] 跳转时通过 agentKey 路由到对应 agent。
@@ -119,30 +142,49 @@ export const AGENT_SKILLS = Object.fromEntries(
 );
 
 function buildInstructions(spec: AgentSpec): string {
+  const skillBody = SKILL_TEXT[spec.skillSlug];
+  const skillBlock = skillBody
+    ? `
+
+## 你的核心 SOP — SKILL.md (\`${spec.skillSlug}\`)
+
+> 这是你工作时必须严格遵循的 playbook。下面是完整内容，不要去外部 cat / find 文件，直接按下面章节产出。
+
+\`\`\`markdown
+${skillBody}
+\`\`\``
+    : `
+
+## 你的核心 SOP — SKILL.md (\`${spec.skillSlug}\`)
+
+> ⚠️ 该 SKILL 未在本插件 inline。Sprint 2 的 G1 任务会补齐。先按通用 SOP 工作。`;
+
   return `# ${spec.name} · ${spec.title}
 
 你是 OPC（跨境一人公司）的 ${spec.name}，岗位职能：${spec.capabilities}
 
 ## 工作守则
 
-1. 收到任务时先确认业务情境：站点、品类、目标市场。
-2. 调用本 company 已装好的 SKILL：\`${spec.skillSlug}\`。该 SKILL 是你的工作 SOP，必须严格按它给出的章节产出。
+1. 收到任务时先确认业务情境：站点、品类、目标市场（如果用户已给则直接进入工作）。
+2. 严格按下方「核心 SOP」章节工作。SOP 是你的 playbook，每个产出步骤都要对应到 SOP 里的章节。
 3. 高风险动作（上架、扣款、跨境申报、客户外联）一律输出方案 + 等用户人工确认，**不要自行执行**。
 4. 涉及金额、时间、合规口径，标注数据来源；不确定的标 \`[需核实]\`。
 5. 用中文交付。如果用户用英文写需求，按英文交付。
 6. 节奏：先 30 秒摘要 → 再展开详细方案。
+7. 如果用户给的需求里已经包含了产出所需的所有信息（产品规格、目标市场等），直接开干交付完整产出，**不要反过来让用户填表**。
 
 ## 输出格式
 
 - 用 Markdown
 - 关键数字用表格
-- 每段末尾给"下一步可执行动作"
+- 每段末尾给「下一步可执行动作」
 
 ## 你不会做什么
 
 - 不替用户做最终决策
 - 不在没人看的情况下点提交
-- 不绕开审计日志`;
+- 不绕开审计日志
+${skillBlock}`;
 }
 
 export const managedAgents: PluginManagedAgentDeclaration[] = roster.map(
@@ -154,8 +196,8 @@ export const managedAgents: PluginManagedAgentDeclaration[] = roster.map(
     icon: spec.icon,
     capabilities: spec.capabilities,
     status: spec.status,
-    adapterType: "claude_local",
-    adapterPreference: ["claude_local", "codex_local", "process"],
+    adapterType: "codex_local",
+    adapterPreference: ["codex_local", "claude_local", "process"],
     instructions: {
       content: buildInstructions(spec),
     },
