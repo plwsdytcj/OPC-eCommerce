@@ -1,0 +1,65 @@
+# OPC 反代配置 — Caddy 2.x 自动 Let's Encrypt SSL
+#
+# 部署形态：1 个根域 → marketplace；workbench 子域 → paperclip
+# 例：
+#   opc.your-domain.com       → marketplace (内测公开)
+#   work.opc.your-domain.com  → paperclip workbench (后台，可选加密)
+#
+# 如果你只想用一个域名，删掉第二个 site block，把 /api/* 反代到 paperclip。
+
+{
+    # 全局选项
+    email {$ACME_EMAIL}
+    # 如要测 SSL 流程可启用 staging，避免触发 Let's Encrypt 限频：
+    # acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+# ── Marketplace 公开站点 ─────────────────────────────────────
+{$DOMAIN} {
+    encode gzip zstd
+
+    # /launch/[agent] 需要 Next.js server (marketplace)
+    # 其他静态资源也由 marketplace 提供
+    reverse_proxy marketplace:3200 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # 安全头
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    log {
+        output stdout
+        format console
+    }
+}
+
+# ── Paperclip workbench 子域 ─────────────────────────────────
+# 把 work.{$DOMAIN} 解析到同一台 ECS 公网 IP，自动 SSL
+work.{$DOMAIN} {
+    encode gzip zstd
+
+    reverse_proxy paperclip:3100 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # paperclip workbench 是后台工作面，挡一道 IP 白名单也行：
+    # @blocked not remote_ip 1.2.3.4 5.6.7.8
+    # respond @blocked 403
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        -Server
+    }
+}

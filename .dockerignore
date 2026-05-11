@@ -1,0 +1,34 @@
+# 给所有 OPC docker build 用的 ignore 表
+# build context 通常是 repo 根
+
+# Node / 编辑器
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/out
+**/.DS_Store
+**/*.log
+
+# 不打进镜像的开发产物
+**/.pnpm-store
+**/coverage
+
+# secrets
+**/.env
+**/.env.local
+**/.env.*.local
+!**/.env.example
+!**/.env.production.template
+
+# git / docs / IDE
+.git
+.cursor
+.vscode
+.idea
+
+# paperclip submodule 当 marketplace build 时也不需要
+apps/workbench
+
+# 评估用代码
+_eval/

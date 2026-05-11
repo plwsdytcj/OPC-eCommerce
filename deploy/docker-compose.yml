@@ -1,0 +1,85 @@
+# OPC 生产部署 — 在阿里云 ECS / 任意 Docker host 上跑。
+#
+# 用法：
+#   1) 把这个目录拷到服务器（或 git clone 整个仓库）
+#   2) cp .env.production.template .env  并填好
+#   3) cd deploy && docker compose up -d
+#
+# 起来后：
+#   - paperclip workbench 监听 3100（内部 only）
+#   - marketplace 监听 3200（内部 only）
+#   - caddy 在 80/443 反代，自动 Let's Encrypt 申请 SSL
+#
+# 数据卷：
+#   - paperclip-home：sqlite db + agent worktrees + skills（必须长久持有）
+#   - caddy-data / caddy-config：SSL 证书（重启后保留）
+
+services:
+  paperclip:
+    build:
+      context: ../apps/workbench
+      dockerfile: Dockerfile
+    image: opc/paperclip:latest
+    container_name: opc-paperclip
+    restart: unless-stopped
+    environment:
+      # 必填
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
+      # paperclip 自身
+      PAPERCLIP_DEPLOYMENT_MODE: ${PAPERCLIP_DEPLOYMENT_MODE:-authenticated}
+      PAPERCLIP_DEPLOYMENT_EXPOSURE: ${PAPERCLIP_DEPLOYMENT_EXPOSURE:-private}
+      PAPERCLIP_BOARD_AUTH_TOKEN: ${PAPERCLIP_BOARD_AUTH_TOKEN:?need to set in .env}
+      PORT: "3100"
+    volumes:
+      - paperclip-home:/paperclip
+      # 让 paperclip 能加载本地开发的 OPC 插件
+      - ../packages:/opc-plugins:ro
+    expose:
+      - "3100"
+    # 不直接对公网暴露 3100，让 caddy 反代
+
+  marketplace:
+    build:
+      context: ..
+      dockerfile: apps/marketplace/Dockerfile
+    image: opc/marketplace:latest
+    container_name: opc-marketplace
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_PAPERCLIP_BASE: ${PUBLIC_PAPERCLIP_BASE}
+      NEXT_PUBLIC_COMPANY_PREFIX: ${COMPANY_PREFIX:-OPC}
+      # marketplace 的 /launch/[agent] route 需要后端能联通 paperclip
+      PAPERCLIP_INTERNAL_BASE: http://paperclip:3100
+      PORT: "3200"
+    expose:
+      - "3200"
+    depends_on:
+      - paperclip
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: opc-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      DOMAIN: ${DOMAIN}                # 例如 opc.your-domain.com
+      ACME_EMAIL: ${ACME_EMAIL}        # Let's Encrypt 联系邮箱
+    depends_on:
+      - paperclip
+      - marketplace
+
+volumes:
+  paperclip-home:
+    driver: local
+  caddy-data:
+    driver: local
+  caddy-config:
+    driver: local
