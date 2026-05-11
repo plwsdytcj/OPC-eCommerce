@@ -3,3 +3,11 @@ packages:
   - "services/*"
   - "packages/*"
   - "workers/*"
+  # paperclip 是 git submodule + 独立 pnpm workspace，必须排除
+  # 否则我们的根 pnpm install 会去吸附它的 ~10 个子包，引发版本冲突
+  - "!apps/workbench"
+  - "!apps/workbench/**"
+  # paperclip 插件包用 .paperclip-sdk/*.tgz + 自己的 pnpm.overrides
+  # 必须独立安装，不能进 root workspace（否则 SDK tarball 路径解析失败）
+  - "!packages/plugin-*"
+  - "!packages/plugin-*/**"

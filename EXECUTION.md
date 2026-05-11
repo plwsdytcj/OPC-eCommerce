@@ -1,57 +1,98 @@
 # 跨境 OPC 园区 AI 孵化平台 — 执行文档
 
-版本：V0.1
+版本：V0.2 (2026-05-10 大幅修订)
 对应 PRD：`opc_v3.md` (V0.3)
-文档目的：把 PRD 落成可执行的开发计划、技术选型与阶段排期
+
+---
+
+## 0. 架构演进记录
+
+### V0.1 → V0.2（2026-05-10）
+
+**核心变更：从「三件套自研胶水」转向「Paperclip 为核心，OPC 作为插件」**
+
+| 模块 | V0.1 决策 | V0.2 决策 | 原因 |
+|---|---|---|---|
+| 工作台 | 参考 paperclip 自研 | **paperclip 直接做底座**（git submodule） | paperclip MIT、活跃、内置 company/agent/skill/issue/goal 完整模型，再造一遍是浪费 |
+| 员工市场 | fork OpenMule | **paperclip plugin SDK 内置 + OPC 自研插件分发** | OpenMule 太早期；paperclip 的 plugin manifest + managedSkills/Agents/Routines 已经覆盖 90% 市场场景 |
+| 员工运行时 | ArkClaw 托管 + 自研 bridge | **Phase 1 走 paperclip plugin worker；Phase 2 再判断是否引入 ArkClaw** | paperclip worker 进程已经能跑 OPC 的 SKILL.md；ArkClaw 桥接重新评估必要性 |
+| 自研服务数量 | 7 个 | **3 个**（plugin 形态） | 大量自研能力被 paperclip 平台吸收 |
+
+### V0.2 架构图
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  apps/workbench  (paperclip submodule)          │
+│   AI 公司操作系统 · React UI · 内置 company/agent/skill/issue   │
+│   embedded postgres · plugin SDK · managed skills/agents/...    │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ plugin SDK (manifest + worker.js)
+              ┌────────────┼─────────────┬───────────────┐
+              ▼            ▼             ▼               ▼
+    ┌──────────────┐ ┌──────────┐ ┌────────────┐ ┌───────────────┐
+    │ cross-border │ │ arkclaw- │ │ park-      │ │ marketplace-  │
+    │ -skills      │ │ bridge   │ │ dashboard  │ │ -browser      │
+    │ (DONE V0.1)  │ │ (P1)     │ │ (P2)       │ │ (P3)          │
+    │ 5 SKILL.md   │ │ 异步任务  │ │ 园区视角    │ │ 员工库浏览     │
+    │ → 自动入库   │ │ 派发回调  │ │ 跨公司监控  │ │ 一键安装       │
+    └──────────────┘ └──────────┘ └────────────┘ └───────────────┘
+```
 
 ---
 
 ## 1. 技术选型最终结论
 
-### 1.1 三件套架构
+### 1.1 二层架构（V0.2）
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│                                                            │
-│   Paperclip          OpenMule          ArkClaw/OpenClaw    │
-│   ─────────          ────────          ─────────────       │
-│   工作台底座         员工市场底座       员工运行时          │
-│   AI 公司操作系统    雇佣 / 安装        Soul/Skill/Tool     │
-│                                                            │
-└────────────────────────────────────────────────────────────┘
-                             ↑
-                  自研胶水服务（必须）
-                  Bridge / Workflow / Permission
+┌──────────────────────────────────────────────────────────────┐
+│ Layer 1 — 平台底座：paperclipai/paperclip (git submodule)    │
+│ ─────────────────────────────────────────────────────────── │
+│  • React + TypeScript + Express + Drizzle + PostgreSQL       │
+│  • Company / Agent / Skill / Issue / Goal / Plugin 全模型     │
+│  • 内嵌 PostgreSQL（worktree 模式自动隔离实例）               │
+│  • Plugin SDK：manifest + worker (RPC) + ui slots            │
+│  • managedAgents / managedSkills / managedRoutines API       │
+└──────────────────────────────────────────────────────────────┘
+                             ↑ plugin SDK
+┌──────────────────────────────────────────────────────────────┐
+│ Layer 2 — OPC 插件矩阵（packages/plugin-*/）                 │
+│ ─────────────────────────────────────────────────────────── │
+│  • plugin-cross-border-skills  跨境 SKILL.md 包（已完成）    │
+│  • plugin-arkclaw-bridge       ArkClaw 任务派发（待启动）     │
+│  • plugin-park-dashboard       园区跨公司视图（Phase 2）      │
+│  • plugin-marketplace-browser  员工市场浏览安装（Phase 3）    │
+│  • plugin-cross-border-tools   跨境工具集（亚马逊/独立站 API）│
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### 1.2 选型对照表
 
-| 层 | 选型 | 替代候选 | 决策理由 |
+| 层 | 选型 | 状态 | 决策理由 |
 |---|---|---|---|
-| 工作台底座 | `paperclipai/paperclip` | Multica | PRD 核心隐喻是「AI 公司」，Paperclip 内置 org / governance / budget，与产品定位同构 |
-| 员工包模板 | `paperclipai/companies` | 自研 | 直接对应「行业员工包」概念 |
-| 员工市场 | `James4Ever0/openmule`（待体检） | 自研 | fork 改造比从零写更快，但需要先做适配性评估 |
-| 员工运行时 | `ArkClaw` 托管 + `openclaw/openclaw` 参考 | 无 | PRD 已明确 |
-| 任务看板 UX | 参考 `multica-ai/multica` | 无 | 不作为底座，仅借鉴交互设计 |
-| 自动化执行 | `n8n-io/n8n` | 自研 | Phase 2 引入 |
-| RPA / 浏览器自动化 | `microsoft/playwright` | 无 | Phase 2/3 引入 |
-| LLM 观测 | `langfuse/langfuse` | 无 | Phase 2 引入 |
-| 数据库 | `PostgreSQL` | 无 | 强事务、JSON 字段支持 |
-| 文件存储 | `MinIO` 或 `TOS` | S3 | 私有化与公有云兼容 |
-| 身份认证 | `Logto` | Keycloak | 多租户友好，运维更轻 |
-| 任务队列 | `BullMQ` (Redis) | Celery | Node 生态优先 |
+| 平台底座 | `paperclipai/paperclip` (submodule @ 0096b56a) | ✅ 已集成 | MIT、commit 在 1h 内、AI 公司操作系统隐喻完全一致 |
+| 员工市场 | paperclip plugin SDK + OPC 插件 | ✅ 通路验证 | managedSkills/Agents 已能 reconcile 到所有 company |
+| 员工运行时 | paperclip plugin worker（Phase 1）/ ArkClaw（Phase 2 待评估） | 🟡 待评估 | Phase 1 不依赖 ArkClaw 也能跑通端到端 |
+| 跨境技能 | `nexscope-ai/Amazon-Skills`、`jeffreydebolt/ecom-cfo-skill` 等 MIT 源 | ✅ 已落地 5 个 | SKILL.md 直接被 esbuild 内嵌进 manifest |
+| 数据库 | paperclip 内嵌 PostgreSQL（dev）/ 共享 PG（prod） | ✅ 跑通 | worktree 模式自动开 54330 端口，避开 5432 冲突 |
+| 包管理 | pnpm workspace + git submodule 混合 | ✅ 跑通 | root workspace 排除 `apps/workbench/**` 与 `packages/plugin-*` |
+| 文件存储 | `MinIO` (dev) / `TOS` (prod) | 🟡 留作 P2 | 当前所有交付物先用 paperclip 自带文件 API |
+| 身份认证 | paperclip 内置 auth | ✅ Phase 1 够用 | `local_trusted` 模式开发期；上生产再评估 Logto |
+| 任务队列 | paperclip plugin job scheduler | ✅ 内置 | 30s 调度间隔、并发控制都自带 |
 
-### 1.3 自研模块清单（不可外包）
+### 1.3 自研模块清单（V0.2 大幅收敛）
 
-| 服务 | 职责 | MVP 必做 |
-|---|---|---|
-| `marketplace-service` | 员工模板/实例化/权限声明 | ✅ |
-| `workflow-service` | 业务流程编排（7 天冷启动 / 供应商开发） | ✅ |
-| `arkclaw-bridge-service` | 任务派发 / 回调 / 重试 / 状态写回 | ✅ |
-| `permission-service` | 多租户隔离 + 最小权限 | ✅ |
-| `audit-log-service` | 操作审计日志 | ✅ |
-| `asset-service` | 店铺/产品/供应商/交付物资产管理 | ✅ |
-| `notification-service` | 用户通知 / 服务商提醒 | Phase 2 |
+| 包 | 职责 | 状态 | 形态 |
+|---|---|---|---|
+| `packages/plugin-cross-border-skills` | 5 个跨境 SKILL.md → 自动装入每个 company | ✅ MVP 已完成 | paperclip 插件 |
+| `packages/plugin-arkclaw-bridge` | （可选）跨进程 agent runtime 桥接 | ⏳ Phase 2 评估 | paperclip 插件 |
+| `packages/plugin-cross-border-tools` | 亚马逊/Shopify/支付/物流 API 工具 | ⏳ Phase 2 | paperclip 插件 + tools |
+| `packages/plugin-park-dashboard` | 园区视角的 cross-company 看板 | ⏳ Phase 2 | paperclip 插件（UI slot） |
+| ~~`services/arkclaw-bridge-service`~~ | （V0.1 老物件） | 🟡 待裁决 | 重写成 plugin 还是删除 |
+| ~~`marketplace-service`~~ | 由 paperclip plugin 系统替代 | ❌ 删除 | — |
+| ~~`workflow-service`~~ | 由 paperclip routines + jobs 替代 | ❌ 删除 | — |
+| ~~`permission-service`~~ | 由 paperclip capabilities 替代 | ❌ 删除 | — |
+| ~~`audit-log-service`~~ | 由 paperclip activity log 替代 | ❌ 删除 | — |
 
 ---
 

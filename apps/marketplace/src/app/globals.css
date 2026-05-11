@@ -1,0 +1,122 @@
+@import "tailwindcss";
+
+:root {
+  /* warm paper palette — editorial, not "AI" */
+  --bg: #F4EFE3;
+  --bg-card: #FBF8F0;
+  --ink: #0E0E0C;
+  --ink-soft: #3A3833;
+  --rule: #1B1B17;
+  --rule-soft: rgba(14, 14, 12, 0.18);
+  --signal: #D04A2E;        /* shipping container red */
+  --ocean: #1B3A4B;         /* deep ocean teal */
+  --gold: #BC8F2A;          /* small accent */
+
+  --serial: 0.72rem;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-card: var(--bg-card);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-rule: var(--rule);
+  --color-rule-soft: var(--rule-soft);
+  --color-signal: var(--signal);
+  --color-ocean: var(--ocean);
+  --color-gold: var(--gold);
+
+  --font-display: var(--font-fraunces);
+  --font-body: var(--font-newsreader);
+  --font-mono: var(--font-jetbrains);
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+body {
+  font-family: var(--font-body), Georgia, serif;
+  font-feature-settings: "ss01", "ss02";
+  font-optical-sizing: auto;
+  /* subtle paper grain */
+  background-image:
+    radial-gradient(circle at 20% 10%, rgba(14, 14, 12, 0.025) 0%, transparent 40%),
+    radial-gradient(circle at 80% 80%, rgba(208, 74, 46, 0.04) 0%, transparent 50%);
+}
+
+/* ---- text utilities ---- */
+.font-display {
+  font-family: var(--font-display), serif;
+  font-variation-settings: "opsz" 144, "SOFT" 30, "WONK" 1;
+  letter-spacing: -0.02em;
+}
+.font-mono {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-feature-settings: "ss03", "zero", "calt";
+}
+
+.serial {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--serial);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+/* ---- decorative rules ---- */
+.rule-thick { border-top: 2px solid var(--rule); }
+.rule-thin  { border-top: 1px solid var(--rule); }
+.rule-hair  { border-top: 1px solid var(--rule-soft); }
+
+/* ---- container print-style ---- */
+.page-container {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding-left: clamp(1.25rem, 4vw, 3.5rem);
+  padding-right: clamp(1.25rem, 4vw, 3.5rem);
+}
+
+/* ---- hover behaviors ---- */
+.task-card {
+  position: relative;
+  transition: transform 0.18s ease-out;
+}
+.task-card:hover {
+  transform: translate(-2px, -2px);
+}
+.task-card:hover .task-card-shadow {
+  transform: translate(4px, 4px);
+}
+.task-card-shadow {
+  position: absolute;
+  inset: 0;
+  background: var(--ink);
+  z-index: -1;
+  transition: transform 0.18s ease-out;
+}
+
+/* ---- staggered enter ---- */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-up {
+  animation: fade-up 0.6s ease-out both;
+}
+
+/* ---- ticker (hero accent) ---- */
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.ticker-track {
+  animation: ticker 40s linear infinite;
+}
+
+/* ---- selection ---- */
+::selection {
+  background: var(--signal);
+  color: var(--bg);
+}
