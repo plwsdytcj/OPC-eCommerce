@@ -1,35 +1,66 @@
-# OPC 反代配置 — Caddy 2.x 自动 Let's Encrypt SSL
+# OPC 反代配置 — Caddy 2.x
 #
-# 部署形态：1 个根域 → marketplace；workbench 子域 → paperclip
-# 例：
-#   opc.your-domain.com       → marketplace (内测公开)
-#   work.opc.your-domain.com  → paperclip workbench (后台，可选加密)
+# 三种部署形态全部支持，按 DOMAIN 变量自动切换：
 #
-# 如果你只想用一个域名，删掉第二个 site block，把 /api/* 反代到 paperclip。
+# 1️⃣ DOMAIN 留空（无域名，纯 IP 直连）
+#    http://<服务器 IP>/        → marketplace
+#    http://<服务器 IP>/work/   → paperclip workbench（同一站点路径分发）
+#    无 HTTPS（IP 没法签证书）。仅适合内测 demo。
+#
+# 2️⃣ DOMAIN=opc-park.com（单域，路径分发）
+#    https://opc-park.com/       → marketplace
+#    https://opc-park.com/work/  → paperclip workbench
+#    全自动 Let's Encrypt SSL
+#
+# 3️⃣ 子域分发（双域，配两条 DNS）
+#    主域 opc-park.com           → marketplace
+#    work.opc-park.com           → paperclip workbench
+#    需要你把双 DNS 都解到这台 ECS。
+#    用法：把 DOMAIN 改成 opc-park.com 且额外配置 work.opc-park.com 的 DNS A 记录后，
+#    把下面 #─── 双域 ───# 那段反注释（并把单域那段注释掉）。
 
 {
-    # 全局选项
-    email {$ACME_EMAIL}
-    # 如要测 SSL 流程可启用 staging，避免触发 Let's Encrypt 限频：
+    email {$ACME_EMAIL:opc@example.com}
+    # 测 SSL 流程时启用 staging，避免触发 Let's Encrypt 限频：
     # acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
 }
 
-# ── Marketplace 公开站点 ─────────────────────────────────────
-{$DOMAIN} {
+# ──── 无域名 / IP 直连模式 ─────────────────────────────────────
+# DOMAIN 为空字符串时 Caddy 仍然会监听 :80（HTTP），自动跳过证书申请。
+# 这里用 :80 占位让 Caddy 匹配任何 host。
+:80 {
     encode gzip zstd
 
-    # /launch/[agent] 需要 Next.js server (marketplace)
-    # 其他静态资源也由 marketplace 提供
-    reverse_proxy marketplace:3200 {
-        header_up Host {host}
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
+    # /work 系列路径 → paperclip workbench
+    # paperclip 自己的 client-side router 路径都不以 /work 开头，
+    # 所以这里做严格前缀剥离再代理回 paperclip 内部 :3100。
+    handle_path /work/* {
+        reverse_proxy paperclip:3100 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+    # paperclip 也直接对外暴露一份 /api、/auth 等接口（marketplace 的 /launch 会调）
+    handle /api/* {
+        reverse_proxy paperclip:3100
+    }
+    handle /auth/* {
+        reverse_proxy paperclip:3100
     }
 
-    # 安全头
+    # 其它所有路径 → marketplace
+    handle {
+        reverse_proxy marketplace:3200 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
     header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
         X-Content-Type-Options "nosniff"
         Referrer-Policy "strict-origin-when-cross-origin"
         -Server
@@ -41,25 +72,44 @@
     }
 }
 
-# ── Paperclip workbench 子域 ─────────────────────────────────
-# 把 work.{$DOMAIN} 解析到同一台 ECS 公网 IP，自动 SSL
-work.{$DOMAIN} {
+# ──── 单域模式（DOMAIN 非空时启用）─────────────────────────────
+# Caddy 在 DOMAIN 为空字符串时会忽略带 {$DOMAIN} 的 site block，
+# 所以这块不会和上面的 :80 冲突。
+{$DOMAIN:_disabled_no_domain_} {
     encode gzip zstd
 
-    reverse_proxy paperclip:3100 {
-        header_up Host {host}
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
+    handle_path /work/* {
+        reverse_proxy paperclip:3100 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
     }
-
-    # paperclip workbench 是后台工作面，挡一道 IP 白名单也行：
-    # @blocked not remote_ip 1.2.3.4 5.6.7.8
-    # respond @blocked 403
+    handle /api/* {
+        reverse_proxy paperclip:3100
+    }
+    handle /auth/* {
+        reverse_proxy paperclip:3100
+    }
+    handle {
+        reverse_proxy marketplace:3200 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
 
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
         X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
         -Server
+    }
+
+    log {
+        output stdout
+        format console
     }
 }

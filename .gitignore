@@ -30,3 +30,11 @@ docker/.data/
 # coverage
 coverage
 .nyc_output
+
+# SSH private keys / secrets — NEVER commit these
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+*.p12
+*.pfx
