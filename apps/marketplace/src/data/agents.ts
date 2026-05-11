@@ -50,6 +50,46 @@ export const WORKBENCH_BASE =
 /** 公司 issuePrefix — 暂硬编码到 OPC Pilot Co */
 export const COMPANY_PREFIX = "OPC";
 
+/**
+ * 协作链：跑完这个 agent 后，paperclip 里的 dispatcher 会自动派活给下游 agent。
+ * 必须和 packages/plugin-cross-border-agents/src/agent-roster.ts 的 DOWNSTREAM_MAP 保持一致。
+ * 这里是给 marketplace 卡片显示用的。
+ */
+export const DOWNSTREAM_MAP: Record<string, readonly string[]> = {
+  "listing-pro": ["keyword", "cfo"],
+  "niche-finder": ["keyword", "cfo"],
+  "expansion": ["compliance"],
+  "adcopy": ["cfo"],
+  "fba": ["cfo"],
+  "keyword": [],
+  "cfo": [],
+  "compliance": [],
+};
+
+/** agent key → 卡片上要显示的名字（简短版） */
+export const AGENT_SHORT_NAME: Record<string, string> = {
+  "listing-pro": "listing",
+  "niche-finder": "niche",
+  "keyword": "keyword",
+  "cfo": "cfo",
+  "expansion": "expansion",
+  "fba": "fba",
+  "compliance": "compliance",
+  "adcopy": "adcopy",
+};
+
+/**
+ * 已经跑过一次的协作链真实样例（dispatcher 自动 spawn 出来的）。
+ * marketplace 首页 hero 会用它做"小队接力"的实证链接。
+ */
+export const SAMPLE_CHAIN = {
+  upstream: { agentKey: "listing-pro", issueId: "64b23a08-8630-4a28-96dd-01662f6e68d0", identifier: "OPC-14" },
+  downstreams: [
+    { agentKey: "keyword", issueId: "0e2f13d8-180e-4417-9f05-f55436c03819", identifier: "OPC-15" },
+    { agentKey: "cfo", issueId: "eddcf604-c832-4dbb-89d6-70901492f6ec", identifier: "OPC-16" },
+  ],
+};
+
 export const CATEGORIES: { key: "All" | AgentCategory; zh: string }[] = [
   { key: "All", zh: "全部" },
   { key: "Listing", zh: "Listing" },

@@ -16,26 +16,25 @@ export function Hero() {
           </h1>
 
           <p className="mt-8 max-w-xl font-body text-lg md:text-xl leading-snug text-ink-soft">
-            6 个 AI 员工，24 小时不下班。<br />
-            会写 Listing、会做选品、会算账、会盯库存。<br />
-            <span className="italic">— 你下班，它上班。</span>
+            8 个 AI 员工，会写 Listing、会做选品、会算账、会盯库存。<br />
+            而且 —— <span className="italic">它们会自动彼此接力</span>：
+            <br />
+            上游交付完，下游自动开干。
           </p>
 
           <div className="mt-10 flex flex-wrap items-center gap-4">
             <a
-              href="#tasks"
+              href="#chain"
               className="inline-flex items-center gap-3 bg-ink text-bg px-6 py-4 font-mono text-sm uppercase tracking-wider hover:bg-signal transition-colors"
             >
-              选一个任务跑跑看
+              看一次真实的小队接力
               <span aria-hidden>↓</span>
             </a>
             <a
-              href="http://127.0.0.1:3101"
-              target="_blank"
-              rel="noopener noreferrer"
+              href="#tasks"
               className="inline-flex items-center gap-2 font-mono text-sm uppercase tracking-wider underline underline-offset-4 decoration-2 hover:text-signal"
             >
-              打开工作台
+              直接挑一个 agent 跑
             </a>
           </div>
         </div>
@@ -47,9 +46,10 @@ export function Hero() {
             <dl className="font-mono text-sm space-y-3">
               <ManifestRow label="instance" value="paperclip-master" />
               <ManifestRow label="port" value="127.0.0.1:3101" />
-              <ManifestRow label="employees seeded" value="5 / 5" />
-              <ManifestRow label="last build" value="now" />
-              <ManifestRow label="uptime" value="∞" emphasis />
+              <ManifestRow label="employees" value="8 / 8" />
+              <ManifestRow label="dispatch chains" value="5 active" emphasis />
+              <ManifestRow label="auto-retry on fail" value="on" />
+              <ManifestRow label="uptime" value="∞" />
             </dl>
           </div>
 

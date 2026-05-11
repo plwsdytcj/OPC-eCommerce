@@ -1,5 +1,6 @@
 import { Header } from "@/components/Header";
 import { Hero } from "@/components/Hero";
+import { DispatchChainShowcase } from "@/components/DispatchChainShowcase";
 import { TaskGrid } from "@/components/TaskGrid";
 import { Pillars } from "@/components/Pillars";
 import { Comparison } from "@/components/Comparison";
@@ -13,6 +14,7 @@ export default function Home() {
       <Header />
       <main className="flex-1">
         <Hero />
+        <DispatchChainShowcase />
         <TaskGrid />
         <Pillars />
         <Comparison />

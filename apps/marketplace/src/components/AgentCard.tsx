@@ -1,11 +1,17 @@
 import type { Agent } from "@/data/agents";
-import { COMPANY_PREFIX, WORKBENCH_BASE } from "@/data/agents";
+import {
+  AGENT_SHORT_NAME,
+  COMPANY_PREFIX,
+  DOWNSTREAM_MAP,
+  WORKBENCH_BASE,
+} from "@/data/agents";
 
-function buildLaunchUrl(agent: Agent): string {
+function buildLaunchUrl(agent: Agent, dispatch: "on" | "off" = "on"): string {
   if (agent.status !== "live" || !agent.agentKey) return "#";
   const params = new URLSearchParams({
     intent: `请按你的 SOP 帮我开始 ${agent.name} 的工作。`,
   });
+  if (dispatch === "off") params.set("dispatch", "off");
   return `/launch/${agent.agentKey}?${params.toString()}`;
 }
 
@@ -14,10 +20,17 @@ function buildSampleUrl(agent: Agent): string | null {
   return `${WORKBENCH_BASE}/${COMPANY_PREFIX}/issues/${agent.sampleIssueId}?via=marketplace-sample`;
 }
 
+function getDownstream(agent: Agent): string[] {
+  if (!agent.agentKey) return [];
+  return [...(DOWNSTREAM_MAP[agent.agentKey] ?? [])];
+}
+
 export function AgentCard({ agent, index }: { agent: Agent; index: number }) {
   const live = agent.status === "live";
-  const href = buildLaunchUrl(agent);
+  const href = buildLaunchUrl(agent, "on");
+  const hrefSolo = buildLaunchUrl(agent, "off");
   const sampleHref = buildSampleUrl(agent);
+  const downstream = getDownstream(agent);
   const isFree = agent.price.low === 0 && agent.price.high === 0;
   const priceLabel = isFree
     ? (live ? "内测免费" : "—")
@@ -65,6 +78,24 @@ export function AgentCard({ agent, index }: { agent: Agent; index: number }) {
         )}
       </div>
 
+      {/* CHAIN — 协作链 chip（只在有下游的 agent 上显示）*/}
+      {live && downstream.length > 0 && (
+        <div className="mt-3 flex items-center gap-1.5 flex-wrap">
+          <span className="font-mono text-[0.6rem] uppercase tracking-[0.15em] text-ink-soft">
+            接力
+          </span>
+          <span className="font-mono text-[0.65rem] text-ink-soft">→</span>
+          {downstream.map((d) => (
+            <span
+              key={d}
+              className="font-mono text-[0.65rem] px-1.5 py-0.5 bg-bg/60 border border-rule-soft text-ink"
+            >
+              @{AGENT_SHORT_NAME[d] ?? d}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* REAL SAMPLE — 真实交付物链接（只有 sampleIssueId 才显示）*/}
       {sampleHref && agent.sampleSummary && (
         <a
@@ -99,15 +130,28 @@ export function AgentCard({ agent, index }: { agent: Agent; index: number }) {
           </span>
         </div>
         {live ? (
-          <a
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 bg-ink text-bg px-4 py-2 font-mono text-xs uppercase tracking-wider hover:bg-signal transition-colors"
-          >
-            Run
-            <span aria-hidden>↗</span>
-          </a>
+          <div className="flex flex-col items-end gap-1">
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 bg-ink text-bg px-4 py-2 font-mono text-xs uppercase tracking-wider hover:bg-signal transition-colors"
+            >
+              Run {downstream.length > 0 ? "+ chain" : ""}
+              <span aria-hidden>↗</span>
+            </a>
+            {downstream.length > 0 && (
+              <a
+                href={hrefSolo}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-[0.6rem] uppercase tracking-[0.12em] text-ink-soft hover:text-signal"
+                title="不要自动派活给下游，只跑这一个 agent"
+              >
+                只跑这个 →
+              </a>
+            )}
+          </div>
         ) : (
           <span className="inline-flex items-center gap-1.5 border border-rule-soft px-4 py-2 font-mono text-xs uppercase tracking-wider text-ink-soft">
             soon

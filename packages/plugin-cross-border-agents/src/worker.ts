@@ -85,7 +85,7 @@ const plugin = definePlugin({
       managedAgents: AGENT_KEYS,
       bindings: AGENT_SKILLS,
       downstream: DOWNSTREAM_MAP,
-      version: "0.2.0",
+      version: "0.3.0",
     }));
 
     // ─── Dispatcher ───────────────────────────────────────────────
@@ -124,6 +124,13 @@ const plugin = definePlugin({
       if (!originKind.startsWith("plugin:opc.cross-border-agents")) return;
       // 必须有 assignee（即上游 agent）
       if (!issue.assigneeAgentId) return;
+      // 用户可在 marketplace 选择「只跑这个 agent，不要接力」，
+      // 那条 issue 的 originId 会带 :nodispatch 后缀
+      const originId = (issue as { originId?: string | null }).originId ?? "";
+      if (originId.endsWith(":nodispatch")) {
+        ctx.logger.info("dispatcher: skipped — user opted out", { issueId, originId });
+        return;
+      }
 
       // 拿上游 agent 的 key
       const upstreamKey = await resolveAgentKey(issue.assigneeAgentId, event.companyId);
@@ -196,6 +203,113 @@ const plugin = definePlugin({
       }
     }
 
+    // ─── Failure auto-retry ───────────────────────────────────────
+    // 当 agent run 失败时，自动 spawn 一个 retry issue（同一 agent，附带
+    // 失败原因 + 原 prompt）。最多 retry 一次 —— 用 originId 编码 attempt
+    // 计数，第 2 次失败时不再重试，让人介入。
+    //
+    // 只对顶层 marketplace issue 重试；dispatch / 子任务 / retry 本身的
+    // 失败不会触发新的 retry。
+    const MAX_RETRY_ATTEMPTS = 1;
+
+    ctx.events.on("agent.run.failed", async (event: PluginEvent) => {
+      try {
+        await handleRunFailed(event);
+      } catch (err) {
+        ctx.logger.error("retry: agent.run.failed handler crashed", {
+          eventId: event.eventId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    });
+
+    async function handleRunFailed(event: PluginEvent): Promise<void> {
+      const payload = event.payload as
+        | {
+            issueId?: string | null;
+            agentId?: string;
+            error?: string | null;
+            errorCode?: string | null;
+            runId?: string;
+          }
+        | undefined;
+      const failedIssueId = payload?.issueId;
+      if (!failedIssueId) return;
+
+      const failedIssue = await ctx.issues.get(failedIssueId, event.companyId);
+      if (!failedIssue) return;
+
+      const originKind = (failedIssue as { originKind?: string }).originKind ?? "";
+      // 只对 marketplace 起的顶层 issue 自动重试
+      if (originKind !== "plugin:opc.cross-border-agents:marketplace") {
+        ctx.logger.debug("retry: skipped — not a marketplace issue", {
+          failedIssueId,
+          originKind,
+        });
+        return;
+      }
+      if (!failedIssue.assigneeAgentId) return;
+
+      // attempt 计数：从 originId 解析
+      const originId = (failedIssue as { originId?: string | null }).originId ?? "";
+      const attemptMatch = originId.match(/attempt-(\d+)/);
+      const currentAttempt = attemptMatch ? Number(attemptMatch[1]) : 1;
+      if (currentAttempt > MAX_RETRY_ATTEMPTS) {
+        ctx.logger.info("retry: skipped — already exceeded MAX_RETRY_ATTEMPTS", {
+          failedIssueId,
+          currentAttempt,
+        });
+        return;
+      }
+
+      const upstreamKey = await resolveAgentKey(failedIssue.assigneeAgentId, event.companyId);
+      if (!upstreamKey) return;
+
+      const errMsg = payload?.error || payload?.errorCode || "unknown error";
+      const failedIdentifier =
+        (failedIssue as { identifier?: string }).identifier ?? failedIssueId.slice(0, 8);
+
+      const nextAttempt = currentAttempt + 1;
+      const retryDescription =
+        `## ⚠️ 自动重试 (attempt ${nextAttempt} / ${MAX_RETRY_ATTEMPTS + 1})\n\n` +
+        `上一次（${failedIdentifier}）跑失败了：\n\n` +
+        `\`\`\`\n${errMsg}\n\`\`\`\n\n` +
+        `请重新尝试。如果失败原因是输入不够，请在 comment 里写 \`[需核实]\` 标记缺什么，` +
+        `而不是硬猜。下面是原始任务：\n\n---\n\n` +
+        (failedIssue.description ?? "(原任务无描述)");
+
+      try {
+        const retryIssue = await ctx.issues.create({
+          companyId: event.companyId,
+          parentId: failedIssueId,
+          title: `[重试 #${nextAttempt}] ${failedIssue.title ?? upstreamKey}`,
+          description: retryDescription,
+          status: "todo",
+          priority: "high",
+          assigneeAgentId: failedIssue.assigneeAgentId,
+          originKind: "plugin:opc.cross-border-agents:retry",
+          originId: `retry-of:${failedIssueId}:attempt-${nextAttempt}`,
+        });
+
+        await ctx.issues.requestWakeup(retryIssue.id, event.companyId, {
+          reason: `auto-retry after failure: ${failedIdentifier}`,
+          contextSource: "plugin:opc.cross-border-agents:retry",
+        });
+
+        ctx.logger.info("retry: spawned retry issue", {
+          failedIssueId,
+          retryIssueId: retryIssue.id,
+          attempt: nextAttempt,
+          upstreamKey,
+        });
+      } catch (err) {
+        ctx.logger.error("retry: failed to spawn retry issue", {
+          failedIssueId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
     async function resolveAgentKey(
       agentId: string,
       companyId: string,
@@ -231,6 +345,8 @@ const plugin = definePlugin({
 
     const agentKey = getOne("agent");
     const intent = getOne("intent") ?? "（从 marketplace 触发的任务，请按你的 SOP 起步。）";
+    const dispatchFlag = (getOne("dispatch") ?? "on").toLowerCase();
+    const dispatchEnabled = dispatchFlag !== "off" && dispatchFlag !== "0" && dispatchFlag !== "false";
     const companyId = input.companyId;
 
     if (!agentKey) {
@@ -289,15 +405,14 @@ const plugin = definePlugin({
         priority: "high",
         assigneeAgentId: agentId,
         originKind: "plugin:opc.cross-border-agents:marketplace",
-        originId: `marketplace:${agentKey}`,
-        actor: { actorType: "plugin", actorId: "opc.cross-border-agents" },
+        originId: dispatchEnabled
+          ? `marketplace:${agentKey}`
+          : `marketplace:${agentKey}:nodispatch`,
       });
 
       await launchCtx.issues.requestWakeup(issue.id, companyId, {
-        reason: `marketplace launch: ${agentKey}`,
+        reason: `marketplace launch: ${agentKey}${dispatchEnabled ? "" : " (no-dispatch)"}`,
         contextSource: "plugin:opc.cross-border-agents",
-        actorType: "plugin",
-        actorId: "opc.cross-border-agents",
       });
 
       const redirectUrl =
@@ -308,6 +423,7 @@ const plugin = definePlugin({
         agentId,
         companyId,
         issueId: issue.id,
+        dispatchEnabled,
       });
 
       return {
