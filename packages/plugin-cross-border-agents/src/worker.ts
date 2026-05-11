@@ -1,6 +1,6 @@
 import { definePlugin, runWorker } from "@paperclipai/plugin-sdk";
-import type { PluginApiRequestInput, PluginApiResponse } from "@paperclipai/plugin-sdk";
-import { AGENT_KEYS, AGENT_SKILLS } from "./agent-roster";
+import type { PluginApiRequestInput, PluginApiResponse, PluginEvent } from "@paperclipai/plugin-sdk";
+import { AGENT_KEYS, AGENT_SKILLS, DOWNSTREAM_MAP, buildDispatchPrompt } from "./agent-roster";
 
 const WORKBENCH_BASE = "http://127.0.0.1:3101";
 
@@ -84,8 +84,134 @@ const plugin = definePlugin({
     ctx.data.register("status", async () => ({
       managedAgents: AGENT_KEYS,
       bindings: AGENT_SKILLS,
-      version: "0.1.0",
+      downstream: DOWNSTREAM_MAP,
+      version: "0.2.0",
     }));
+
+    // ─── Dispatcher ───────────────────────────────────────────────
+    // 监听 issue.updated；当顶层 marketplace issue 跑完 (status=done)，
+    // 按 DOWNSTREAM_MAP 自动 spawn 子 issue 给下游 agent。
+    //
+    // 防循环：只处理 parentId 为空的顶层 issue。dispatch 出来的子 issue
+    // 自带 parentId，所以它跑完时 dispatcher 不会再次派活。
+    ctx.events.on("issue.updated", async (event: PluginEvent) => {
+      try {
+        await handleIssueUpdated(event);
+      } catch (err) {
+        ctx.logger.error("dispatcher: issue.updated handler crashed", {
+          eventId: event.eventId,
+          entityId: event.entityId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    });
+
+    async function handleIssueUpdated(event: PluginEvent): Promise<void> {
+      const issueId = event.entityId;
+      if (!issueId) return;
+      const payload = event.payload as
+        | { patch?: { status?: string }; status?: string }
+        | undefined;
+      const newStatus = payload?.patch?.status ?? payload?.status;
+      if (newStatus !== "done") return;
+
+      const issue = await ctx.issues.get(issueId, event.companyId);
+      if (!issue) return;
+      // 只对顶层 issue 派活
+      if (issue.parentId) return;
+      // 只对我们 plugin 起的 issue 派活
+      const originKind = (issue as { originKind?: string }).originKind ?? "";
+      if (!originKind.startsWith("plugin:opc.cross-border-agents")) return;
+      // 必须有 assignee（即上游 agent）
+      if (!issue.assigneeAgentId) return;
+
+      // 拿上游 agent 的 key
+      const upstreamKey = await resolveAgentKey(issue.assigneeAgentId, event.companyId);
+      if (!upstreamKey) {
+        ctx.logger.debug("dispatcher: assignee is not a managed agent", {
+          issueId,
+          assigneeAgentId: issue.assigneeAgentId,
+        });
+        return;
+      }
+
+      const downstream = DOWNSTREAM_MAP[upstreamKey] ?? [];
+      if (downstream.length === 0) {
+        ctx.logger.debug("dispatcher: upstream has no downstream", { upstreamKey });
+        return;
+      }
+
+      ctx.logger.info("dispatcher: upstream done, spawning downstream", {
+        issueId,
+        upstreamKey,
+        downstreamKeys: downstream,
+      });
+
+      for (const downstreamKey of downstream) {
+        try {
+          const resolution = await ctx.agents.managed.get(downstreamKey, event.companyId);
+          if (!resolution.agentId) {
+            ctx.logger.warn("dispatcher: downstream agent not resolved", { downstreamKey });
+            continue;
+          }
+          const upstreamIdentifier =
+            (issue as { identifier?: string }).identifier ?? `issue ${issueId.slice(0, 8)}`;
+          const { title, description } = buildDispatchPrompt(
+            upstreamKey,
+            downstreamKey,
+            upstreamIdentifier,
+            issue.title ?? "(no title)",
+          );
+
+          const childIssue = await ctx.issues.create({
+            companyId: event.companyId,
+            parentId: issueId,
+            title,
+            description,
+            status: "todo",
+            priority: "normal",
+            assigneeAgentId: resolution.agentId,
+            originKind: "plugin:opc.cross-border-agents:dispatch",
+            originId: `dispatch:${issueId}:${downstreamKey}`,
+          });
+
+          await ctx.issues.requestWakeup(childIssue.id, event.companyId, {
+            reason: `dispatch chain: ${upstreamKey} → ${downstreamKey}`,
+            contextSource: "plugin:opc.cross-border-agents:dispatcher",
+          });
+
+          ctx.logger.info("dispatcher: child issue spawned", {
+            upstreamKey,
+            downstreamKey,
+            parentId: issueId,
+            childId: childIssue.id,
+          });
+        } catch (err) {
+          ctx.logger.error("dispatcher: failed to spawn child", {
+            upstreamKey,
+            downstreamKey,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
+
+    async function resolveAgentKey(
+      agentId: string,
+      companyId: string,
+    ): Promise<string | null> {
+      // 反查：遍历 managed agent，谁的 agentId 等于上游 issue 的 assigneeAgentId
+      // 就是它对应的 key。companyId 范围内查找。
+      for (const key of AGENT_KEYS) {
+        try {
+          const resolution = await ctx.agents.managed.get(key, companyId);
+          if (resolution.agentId === agentId) return key;
+        } catch {
+          // ignore — 该 key 可能在该 company 还没 reconcile
+        }
+      }
+      return null;
+    }
   },
 
   async onHealth() {

@@ -44,6 +44,121 @@ interface AgentSpec {
   status: "idle" | "paused";
 }
 
+/**
+ * 数字员工协作链：每个 agent 完成主任务后，dispatcher 自动 spawn 子 issue
+ * 派给下面这些 agent，让它们接力工作。
+ *
+ * 设计规则：
+ * - 只对顶层 issue（无 parentId）派活，避免循环
+ * - 中游/汇总型 agent（keyword/cfo/compliance）下游为空，作为协作链终点
+ * - 上游 agent 把"该交给下游的输入"在 dispatcher 里写成具体 prompt
+ */
+export const DOWNSTREAM_MAP: Record<string, readonly string[]> = {
+  "listing-pro": ["keyword", "cfo"],
+  "niche-finder": ["keyword", "cfo"],
+  "expansion": ["compliance"],
+  "adcopy": ["cfo"],
+  "fba": ["cfo"],
+  "keyword": [],
+  "cfo": [],
+  "compliance": [],
+};
+
+/**
+ * 上游 agent 完成后，给下游 agent 的 task prompt 模板。
+ * 第一个参数是上游 issue 的 short link（OPC-N），第二个是上游 agent key。
+ */
+export function buildDispatchPrompt(
+  upstreamKey: string,
+  downstreamKey: string,
+  upstreamIssueIdentifier: string,
+  upstreamTitle: string,
+): { title: string; description: string } {
+  const upstreamRef = `${upstreamIssueIdentifier} (上游 @${upstreamKey})`;
+  const shortTitle =
+    upstreamTitle.length > 24 ? `${upstreamTitle.slice(0, 24)}…` : upstreamTitle;
+  const map: Record<string, Record<string, { title: string; description: string }>> = {
+    "listing-pro": {
+      keyword: {
+        title: `[接力] ${upstreamIssueIdentifier} → 追加 30 天 SEM 关键词`,
+        description:
+          `## 协作上下文\n\n` +
+          `这是 ${upstreamRef} listing 出货后的接力任务。\n\n` +
+          `请打开上游 issue 看 listing 文案，基于它的产品定位输出：\n\n` +
+          `1. 30 天 Amazon PPC 关键词梯队（Tier 1/2/3 + 否定词）\n` +
+          `2. 配套 Google Shopping / Meta Ads 5-8 词\n` +
+          `3. 每周值得追加的 3 个长尾测试词\n` +
+          `4. 末尾给「下一步可执行动作」清单\n\n` +
+          `如果上游 listing 缺少能让你做这一步的关键信息，请在 comment 里标 \`[需核实]\`，不要伪造。`,
+      },
+      cfo: {
+        title: `[接力] ${upstreamIssueIdentifier} → 算单位经济`,
+        description:
+          `## 协作上下文\n\n` +
+          `这是 ${upstreamRef} listing 出货后的接力任务。\n\n` +
+          `请打开上游 issue 拿售价 / 主要成本假设，输出：\n\n` +
+          `1. 单 SKU 单位经济：单价、COGS、FBA、广告、运营摊销、贡献利润\n` +
+          `2. 盈亏平衡日销量\n` +
+          `3. 4 个广告效率档位（TACoS 5% / 10% / 15% / 20%）下的真实净利\n` +
+          `4. 3 个具体改善建议\n` +
+          `5. 末尾「下一步可执行动作」清单\n\n` +
+          `缺数据请标 \`[需核实]\`，不要编造。`,
+      },
+    },
+    "niche-finder": {
+      keyword: {
+        title: `[接力] ${upstreamIssueIdentifier} → niche 关键词矩阵`,
+        description:
+          `## 协作上下文\n\n` +
+          `${upstreamRef} 完成了 niche 推荐。请打开上游 issue 拿 Top 3 niche，` +
+          `对每个 niche 做完整关键词矩阵（Tier 1/2/3 + 后台 Search Terms + Rufus 问句）。` +
+          `末尾给「下一步可执行动作」清单。`,
+      },
+      cfo: {
+        title: `[接力] ${upstreamIssueIdentifier} → Top 3 niche 单位经济`,
+        description:
+          `## 协作上下文\n\n` +
+          `${upstreamRef} 选出了 Top 3 niche。请按每个 niche 的 FOB、售价、` +
+          `平台费做单位经济测算，输出"上哪个 niche 最赚钱"的盈亏平衡对比。` +
+          `末尾给「下一步可执行动作」清单。`,
+      },
+    },
+    "expansion": {
+      compliance: {
+        title: `[接力] ${upstreamIssueIdentifier} → 推荐市场合规预审`,
+        description:
+          `## 协作上下文\n\n` +
+          `${upstreamRef} 完成出海评估，给出了 Top 3 推荐市场。请打开上游 issue 拿目标市场，` +
+          `按推荐顺序输出每个市场的合规预审清单（食品接触 / 电气 / 锂电 / 当地税务）。` +
+          `末尾给「30 天可执行动作」清单。`,
+      },
+    },
+    "adcopy": {
+      cfo: {
+        title: `[接力] ${upstreamIssueIdentifier} → 广告 ROAS / 预算红线`,
+        description:
+          `## 协作上下文\n\n` +
+          `${upstreamRef} 完成多平台文案矩阵。请按 A/B 测试组合估算各平台广告 ROAS、` +
+          `安全 ACoS 上限、月度广告预算红线。末尾给「下一步可执行动作」清单。`,
+      },
+    },
+    "fba": {
+      cfo: {
+        title: `[接力] ${upstreamIssueIdentifier} → 仓储费蚕食 + 现金占用`,
+        description:
+          `## 协作上下文\n\n` +
+          `${upstreamRef} 输出库存预警。请按断货 / 积压 SKU 估算 6 个月仓储费蚕食、` +
+          `现金占用变化，给出"是否值得清库存"的决策建议。末尾给「下一步可执行动作」清单。`,
+      },
+    },
+  };
+  const fallback = {
+    title: `[接力] ${upstreamIssueIdentifier} → ${downstreamKey}：${shortTitle}`,
+    description: `${upstreamRef} 完成，请基于上游产出继续。`,
+  };
+  return map[upstreamKey]?.[downstreamKey] ?? fallback;
+}
+
 const roster: AgentSpec[] = [
   {
     key: "listing-pro",
