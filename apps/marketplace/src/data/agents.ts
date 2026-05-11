@@ -34,7 +34,21 @@ export interface Agent {
   /** 估算耗时 */
   est: string;
   status: "live" | "soon";
+  /**
+   * 已经真跑过一次的样品 issue id（paperclip 那边）。
+   * 如果有，卡片上会出现「看一份真实成品 ↗」按钮，链到 /OPC/issues/<id>。
+   */
+  sampleIssueId?: string;
+  /** 样品产出的一句话归纳，hover 时显示 */
+  sampleSummary?: string;
 }
+
+/** paperclip 工作台 URL（dev 本地 / 公网都从同一个常量取） */
+export const WORKBENCH_BASE =
+  process.env.NEXT_PUBLIC_PAPERCLIP_BASE ?? "http://127.0.0.1:3101";
+
+/** 公司 issuePrefix — 暂硬编码到 OPC Pilot Co */
+export const COMPANY_PREFIX = "OPC";
 
 export const CATEGORIES: { key: "All" | AgentCategory; zh: string }[] = [
   { key: "All", zh: "全部" },
@@ -68,6 +82,9 @@ export const agents: Agent[] = [
     price: { low: 3, high: 8 },
     est: "约 25 分钟",
     status: "live",
+    sampleIssueId: "0e9ff365-8ec0-4029-85d0-6f419dd0b1d5",
+    sampleSummary:
+      "PetSpring W-2L Pro 美亚 listing：标题 183/200 + 5 bullets + A+ 6 模块 + Search Terms 211/230，14/14 关键词全覆盖",
   },
   {
     id: "niche-finder",
@@ -87,6 +104,9 @@ export const agents: Agent[] = [
     price: { low: 5, high: 12 },
     est: "约 18 分钟",
     status: "live",
+    sampleIssueId: "89e5d70d-c5ce-4879-9b92-f38a1a5c3536",
+    sampleSummary:
+      "宠物/户外/家居整理 5 个 niche，附 8 维度评分表 + Top 3 推荐 + 1688 FOB 比 + 7 天动作清单",
   },
   {
     id: "keyword-strategist",
@@ -106,6 +126,9 @@ export const agents: Agent[] = [
     price: { low: 1, high: 3 },
     est: "约 12 分钟",
     status: "live",
+    sampleIssueId: "1ea2e06a-d7ef-4593-a963-87830757f034",
+    sampleSummary:
+      "便携蓝牙音箱 Tier 1/2/3 三层关键词矩阵 + Rufus 问句 + Search Terms + 关键词覆盖映射",
   },
   {
     id: "ecom-cfo",
@@ -126,6 +149,9 @@ export const agents: Agent[] = [
     price: { low: 8, high: 15 },
     est: "约 8 分钟",
     status: "live",
+    sampleIssueId: "0e9b4d54-33c8-4301-b4c9-e68b6678ff94",
+    sampleSummary:
+      "$42k/月 跨境一人公司三月 P&L：贡献利润 -$252/月，真实 CCC 62.6 天，给出 3 个动手建议",
   },
   {
     id: "expansion-strategist",
@@ -146,6 +172,9 @@ export const agents: Agent[] = [
     price: { low: 12, high: 25 },
     est: "约 30 分钟",
     status: "live",
+    sampleIssueId: "355d435a-8f15-493a-a430-c4cf562502ea",
+    sampleSummary:
+      "US 站 $42k 现金 $80k → 第二站推荐：DE/UK/CA 8 维度打分 + 5 履约模型 + 30/90/180 天路线图",
   },
   {
     id: "fba-watcher",
@@ -164,7 +193,10 @@ export const agents: Agent[] = [
     ],
     price: { low: 0, high: 0 },
     est: "约 5 分钟",
-    status: "soon",
+    status: "live",
+    sampleIssueId: "a3381cc6-49b2-4867-a19b-e481776e9a5b",
+    sampleSummary:
+      "12 个 SKU 库存扫描：4 个 30 天断货预警 + 4 个 120 天积压；附补货 + 清库执行清单",
   },
   {
     id: "compliance-checker",
@@ -183,7 +215,10 @@ export const agents: Agent[] = [
     ],
     price: { low: 0, high: 0 },
     est: "约 15 分钟",
-    status: "soon",
+    status: "live",
+    sampleIssueId: "125a0f1c-f73d-4cc8-ab70-cd8355cbe9f6",
+    sampleSummary:
+      "DE/JP/CA/UK 四市场合规预审：食品接触/电气/锂电/VAT/EORI 全覆盖；难度排序 CA→JP→UK→DE",
   },
   {
     id: "ad-copywriter",
@@ -202,6 +237,9 @@ export const agents: Agent[] = [
     ],
     price: { low: 0, high: 0 },
     est: "约 10 分钟",
-    status: "soon",
+    status: "live",
+    sampleIssueId: "a6d3265b-2c41-44b8-9578-1f0bd03f11b0",
+    sampleSummary:
+      "Amazon SB/SD + TikTok/Meta/Google Shopping 五平台文案矩阵，含 A/B 测试组合表 + TOS 禁词规避",
   },
 ];

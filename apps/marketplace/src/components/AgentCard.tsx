@@ -1,4 +1,5 @@
 import type { Agent } from "@/data/agents";
+import { COMPANY_PREFIX, WORKBENCH_BASE } from "@/data/agents";
 
 function buildLaunchUrl(agent: Agent): string {
   if (agent.status !== "live" || !agent.agentKey) return "#";
@@ -8,9 +9,15 @@ function buildLaunchUrl(agent: Agent): string {
   return `/launch/${agent.agentKey}?${params.toString()}`;
 }
 
+function buildSampleUrl(agent: Agent): string | null {
+  if (!agent.sampleIssueId) return null;
+  return `${WORKBENCH_BASE}/${COMPANY_PREFIX}/issues/${agent.sampleIssueId}?via=marketplace-sample`;
+}
+
 export function AgentCard({ agent, index }: { agent: Agent; index: number }) {
   const live = agent.status === "live";
   const href = buildLaunchUrl(agent);
+  const sampleHref = buildSampleUrl(agent);
   const isFree = agent.price.low === 0 && agent.price.high === 0;
   const priceLabel = isFree
     ? (live ? "内测免费" : "—")
@@ -57,6 +64,29 @@ export function AgentCard({ agent, index }: { agent: Agent; index: number }) {
           ),
         )}
       </div>
+
+      {/* REAL SAMPLE — 真实交付物链接（只有 sampleIssueId 才显示）*/}
+      {sampleHref && agent.sampleSummary && (
+        <a
+          href={sampleHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 -mx-2 px-2 py-2 group/sample block border border-rule-soft hover:border-signal hover:bg-bg/60 transition-colors"
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-signal animate-pulse" />
+            <span className="font-mono text-[0.6rem] uppercase tracking-[0.15em] text-ink-soft group-hover/sample:text-signal">
+              已跑过一次真实任务
+            </span>
+            <span className="ml-auto font-mono text-[0.7rem] text-ink-soft group-hover/sample:text-signal">
+              ↗
+            </span>
+          </div>
+          <p className="font-body text-xs text-ink-soft leading-snug line-clamp-2">
+            {agent.sampleSummary}
+          </p>
+        </a>
+      )}
 
       {/* FOOT */}
       <div className="mt-5 flex items-center justify-between gap-2">
